@@ -1,0 +1,31 @@
+# Replace insecureSkipTLSVerify with `caBundle: <base64 CA>` when the serving
+# certificate is issued by a CA the API server can verify.
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1beta1.metrics.k8s.io
+spec:
+  group: metrics.k8s.io
+  version: v1beta1
+  groupPriorityMinimum: 100
+  versionPriority: 100
+  insecureSkipTLSVerify: true
+  service:
+    name: prom-metrics
+    namespace: kube-system
+    port: 443
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: v1.metrics.k8s.io
+spec:
+  group: metrics.k8s.io
+  version: v1
+  groupPriorityMinimum: 100
+  versionPriority: 200
+  insecureSkipTLSVerify: true
+  service:
+    name: prom-metrics
+    namespace: kube-system
+    port: 443

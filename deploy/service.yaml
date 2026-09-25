@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: prom-metrics
+  namespace: kube-system
+  labels:
+    app: prom-metrics
+spec:
+  selector:
+    app: prom-metrics
+  ports:
+    - name: https
+      port: 443
+      targetPort: https
