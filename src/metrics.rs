@@ -445,7 +445,7 @@ mod tests {
         );
         // leap day
         assert_eq!(
-            rfc3339(UNIX_EPOCH + Duration::from_secs(1_709_164_800)),
+            rfc3339(UNIX_EPOCH + Duration::from_hours(474_768)),
             "2024-02-29T00:00:00Z"
         );
     }
