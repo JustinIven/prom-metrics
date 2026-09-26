@@ -3,12 +3,12 @@
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
-use axum::{routing::post, Form, Json, Router};
-use serde_json::{json, Value};
+use axum::{Form, Json, Router, routing::post};
+use serde_json::{Value, json};
 
 use prom_metrics::{
-    api::{router, AppState},
-    metrics::{collect, Store},
+    api::{AppState, router},
+    metrics::{Store, collect},
     prometheus::PromClient,
 };
 

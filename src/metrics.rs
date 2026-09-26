@@ -1,8 +1,8 @@
 use std::{
     collections::{BTreeMap, HashMap},
     sync::{
-        atomic::{AtomicU64, Ordering},
         RwLock,
+        atomic::{AtomicU64, Ordering},
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -170,7 +170,9 @@ fn queries(window: Duration) -> [String; 6] {
             "sum by (namespace, pod, container) (last_over_time(container_memory_working_set_bytes{{container!=\"\", container!=\"POD\"}}[{w}]))"
         ),
         format!("sum by (node) (rate(container_cpu_usage_seconds_total{{id=\"/\"}}[{w}]))"),
-        format!("sum by (node) (last_over_time(container_memory_working_set_bytes{{id=\"/\"}}[{w}]))"),
+        format!(
+            "sum by (node) (last_over_time(container_memory_working_set_bytes{{id=\"/\"}}[{w}]))"
+        ),
         format!("last_over_time(kube_pod_labels[{w}])"),
         format!("last_over_time(kube_node_labels[{w}])"),
     ]
@@ -179,8 +181,14 @@ fn queries(window: Duration) -> [String; 6] {
 /// # Errors
 /// Returns an error if any of the required Prometheus queries fail.
 pub async fn collect(client: &PromClient, window: Duration) -> Result<Snapshot, Error> {
-    let [q_pod_cpu, q_pod_mem, q_node_cpu, q_node_mem, q_pod_labels, q_node_labels] =
-        queries(window);
+    let [
+        q_pod_cpu,
+        q_pod_mem,
+        q_node_cpu,
+        q_node_mem,
+        q_pod_labels,
+        q_node_labels,
+    ] = queries(window);
 
     let (pod_cpu, pod_mem, node_cpu, node_mem) = tokio::try_join!(
         client.query(&q_pod_cpu),

@@ -66,7 +66,7 @@ impl Config {
             _ => {
                 return Err(Error::Config(
                     "TLS_CERT_FILE and TLS_KEY_FILE must both exist".into(),
-                ))
+                ));
             }
         };
 

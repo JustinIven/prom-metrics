@@ -1,5 +1,5 @@
 use std::{
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::{Duration, Instant},
 };
 
@@ -10,7 +10,7 @@ use prom_metrics::{
     api::{self, AppState},
     config::Config,
     error::Error,
-    metrics::{collect, Store},
+    metrics::{Store, collect},
     prometheus::PromClient,
 };
 

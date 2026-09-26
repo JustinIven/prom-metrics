@@ -1,15 +1,15 @@
 use std::{
     collections::HashMap,
-    sync::{atomic::Ordering, Arc},
+    sync::{Arc, atomic::Ordering},
     time::Duration,
 };
 
 use axum::{
+    Json, Router,
     extract::{Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -17,7 +17,7 @@ use serde_json::json;
 use crate::{
     error::{k8s_status, not_found},
     metrics::{
-        format_cpu, format_memory, sanitize_label_key, NodeMetric, PodMetric, Snapshot, Store,
+        NodeMetric, PodMetric, Snapshot, Store, format_cpu, format_memory, sanitize_label_key,
     },
 };
 
