@@ -22,7 +22,10 @@ impl Sample {
     }
 
     pub fn label(&self, key: &str) -> Option<&str> {
-        self.metric.get(key).map(String::as_str).filter(|v| !v.is_empty())
+        self.metric
+            .get(key)
+            .map(String::as_str)
+            .filter(|v| !v.is_empty())
     }
 }
 
@@ -75,13 +78,17 @@ impl PromClient {
 
         let status = resp.status();
         if !status.is_success() {
-            return Err(Error::Prometheus(format!("query returned HTTP {}", status.as_u16())));
+            return Err(Error::Prometheus(format!(
+                "query returned HTTP {}",
+                status.as_u16()
+            )));
         }
 
         let body: QueryResponse = resp.json().await?;
         if body.status != "success" {
             return Err(Error::Prometheus(
-                body.error.unwrap_or_else(|| format!("status {}", body.status)),
+                body.error
+                    .unwrap_or_else(|| format!("status {}", body.status)),
             ));
         }
         Ok(body.data.map(|d| d.result).unwrap_or_default())
@@ -116,14 +123,17 @@ mod tests {
 
     #[test]
     fn parses_empty_result() {
-        assert!(parse(r#"{"status":"success","data":{"resultType":"vector","result":[]}}"#)
-            .unwrap()
-            .is_empty());
+        assert!(
+            parse(r#"{"status":"success","data":{"resultType":"vector","result":[]}}"#)
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]
     fn propagates_prometheus_error() {
-        let err = parse(r#"{"status":"error","errorType":"bad_data","error":"parse error"}"#).unwrap_err();
+        let err = parse(r#"{"status":"error","errorType":"bad_data","error":"parse error"}"#)
+            .unwrap_err();
         assert_eq!(err, "parse error");
     }
 

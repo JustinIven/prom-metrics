@@ -25,7 +25,9 @@ impl Config {
             .trim_end_matches('/')
             .to_string();
         if !prometheus_url.starts_with("http://") && !prometheus_url.starts_with("https://") {
-            return Err(Error::Config("PROMETHEUS_URL must be an http(s) URL".into()));
+            return Err(Error::Config(
+                "PROMETHEUS_URL must be an http(s) URL".into(),
+            ));
         }
 
         let poll_interval = duration_var("POLL_INTERVAL", "15s")?;
@@ -38,23 +40,34 @@ impl Config {
         }
 
         let listen = var("LISTEN_ADDR", "0.0.0.0:8443");
-        let listen_addr = listen
-            .parse()
-            .map_err(|_| Error::Config(format!("LISTEN_ADDR is not a valid socket address: {listen}")))?;
+        let listen_addr = listen.parse().map_err(|_| {
+            Error::Config(format!(
+                "LISTEN_ADDR is not a valid socket address: {listen}"
+            ))
+        })?;
 
         let cert = var("TLS_CERT_FILE", DEFAULT_CERT);
         let key = var("TLS_KEY_FILE", DEFAULT_KEY);
         // TLS is used when the material is actually present, so the same binary can
         // run behind the aggregation layer or plain HTTP locally.
-        let tls = match (std::path::Path::new(&cert).exists(), std::path::Path::new(&key).exists()) {
+        let tls = match (
+            std::path::Path::new(&cert).exists(),
+            std::path::Path::new(&key).exists(),
+        ) {
             (true, true) => Some((cert, key)),
             (false, false) => {
                 if env::var_os("TLS_CERT_FILE").is_some() || env::var_os("TLS_KEY_FILE").is_some() {
-                    return Err(Error::Config(format!("TLS_CERT_FILE/TLS_KEY_FILE not found: {cert}, {key}")));
+                    return Err(Error::Config(format!(
+                        "TLS_CERT_FILE/TLS_KEY_FILE not found: {cert}, {key}"
+                    )));
                 }
                 None
             }
-            _ => return Err(Error::Config("TLS_CERT_FILE and TLS_KEY_FILE must both exist".into())),
+            _ => {
+                return Err(Error::Config(
+                    "TLS_CERT_FILE and TLS_KEY_FILE must both exist".into(),
+                ))
+            }
         };
 
         Ok(Self {
@@ -109,7 +122,11 @@ pub fn parse_duration(s: &str) -> Result<Duration, String> {
     }
     // No lossless conversion exists between `f64` and `u64`; `value` is
     // checked finite and non-negative immediately above.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::as_conversions
+    )]
     let nanos = {
         #[allow(clippy::cast_precision_loss)]
         let unit_ns = unit_ns as f64;

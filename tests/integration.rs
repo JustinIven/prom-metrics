@@ -26,8 +26,14 @@ async fn prometheus_query(Form(form): Form<HashMap<String, String>>) -> Json<Val
     let q = form.get("query").cloned().unwrap_or_default();
     let result = if q.contains("kube_pod_labels") {
         vector(&[
-            sample(&json!({"namespace": "default", "pod": "web", "label_app": "web"}), 1.0),
-            sample(&json!({"namespace": "default", "pod": "api", "label_app": "api"}), 1.0),
+            sample(
+                &json!({"namespace": "default", "pod": "web", "label_app": "web"}),
+                1.0,
+            ),
+            sample(
+                &json!({"namespace": "default", "pod": "api", "label_app": "api"}),
+                1.0,
+            ),
         ])
     } else if q.contains("kube_node_labels") {
         vector(&[sample(
@@ -46,17 +52,41 @@ async fn prometheus_query(Form(form): Form<HashMap<String, String>>) -> Json<Val
         ])
     } else if q.contains("rate(") {
         vector(&[
-            sample(&json!({"namespace": "default", "pod": "web", "container": "app"}), 0.25),
-            sample(&json!({"namespace": "default", "pod": "web", "container": "POD"}), 9.0),
-            sample(&json!({"namespace": "default", "pod": "api", "container": "app"}), 0.0),
-            sample(&json!({"namespace": "kube-system", "pod": "dns", "container": "coredns"}), 0.01),
+            sample(
+                &json!({"namespace": "default", "pod": "web", "container": "app"}),
+                0.25,
+            ),
+            sample(
+                &json!({"namespace": "default", "pod": "web", "container": "POD"}),
+                9.0,
+            ),
+            sample(
+                &json!({"namespace": "default", "pod": "api", "container": "app"}),
+                0.0,
+            ),
+            sample(
+                &json!({"namespace": "kube-system", "pod": "dns", "container": "coredns"}),
+                0.01,
+            ),
         ])
     } else {
         vector(&[
-            sample(&json!({"namespace": "default", "pod": "web", "container": "app"}), 64.0 * MI),
-            sample(&json!({"namespace": "default", "pod": "web", "container": "sidecar"}), 8.0 * MI),
-            sample(&json!({"namespace": "default", "pod": "api", "container": "app"}), 0.0),
-            sample(&json!({"namespace": "kube-system", "pod": "dns", "container": "coredns"}), 16.0 * MI),
+            sample(
+                &json!({"namespace": "default", "pod": "web", "container": "app"}),
+                64.0 * MI,
+            ),
+            sample(
+                &json!({"namespace": "default", "pod": "web", "container": "sidecar"}),
+                8.0 * MI,
+            ),
+            sample(
+                &json!({"namespace": "default", "pod": "api", "container": "app"}),
+                0.0,
+            ),
+            sample(
+                &json!({"namespace": "kube-system", "pod": "dns", "container": "coredns"}),
+                16.0 * MI,
+            ),
         ])
     };
     Json(result)
@@ -81,7 +111,11 @@ async fn adapter(max_metrics_age: Duration) -> String {
 
     let store = Arc::new(Store::default());
     store.replace(snapshot);
-    serve(router(AppState { store, max_metrics_age })).await
+    serve(router(AppState {
+        store,
+        max_metrics_age,
+    }))
+    .await
 }
 
 #[allow(clippy::unwrap_used)]
@@ -128,7 +162,10 @@ async fn lists_pods_across_all_namespaces() {
     let items = body["items"].as_array().unwrap();
     assert_eq!(items.len(), 3);
 
-    let web = items.iter().find(|i| i["metadata"]["name"] == "web").unwrap();
+    let web = items
+        .iter()
+        .find(|i| i["metadata"]["name"] == "web")
+        .unwrap();
     assert_eq!(web["metadata"]["namespace"], "default");
     assert_eq!(web["window"], "60s");
     assert!(web["timestamp"].as_str().unwrap().ends_with('Z'));
@@ -143,7 +180,10 @@ async fn lists_pods_across_all_namespaces() {
     assert_eq!(containers[1]["usage"]["memory"], "8Mi");
 
     // idle pod still reports zeroed usage rather than disappearing
-    let api = items.iter().find(|i| i["metadata"]["name"] == "api").unwrap();
+    let api = items
+        .iter()
+        .find(|i| i["metadata"]["name"] == "api")
+        .unwrap();
     assert_eq!(api["containers"][0]["usage"]["cpu"], "0m");
     assert_eq!(api["containers"][0]["usage"]["memory"], "0");
 }
@@ -183,13 +223,21 @@ async fn v1beta1_is_semantically_equivalent_to_v1() {
 async fn gets_single_pod_and_reports_missing_ones() {
     let base = adapter(Duration::from_secs(60)).await;
 
-    let (status, body) = get(&base, "/apis/metrics.k8s.io/v1beta1/namespaces/default/pods/web").await;
+    let (status, body) = get(
+        &base,
+        "/apis/metrics.k8s.io/v1beta1/namespaces/default/pods/web",
+    )
+    .await;
     assert_eq!(status, 200);
     assert_eq!(body["kind"], "PodMetrics");
     assert_eq!(body["apiVersion"], "metrics.k8s.io/v1beta1");
     assert_eq!(body["metadata"]["name"], "web");
 
-    let (status, body) = get(&base, "/apis/metrics.k8s.io/v1/namespaces/default/pods/ghost").await;
+    let (status, body) = get(
+        &base,
+        "/apis/metrics.k8s.io/v1/namespaces/default/pods/ghost",
+    )
+    .await;
     assert_eq!(status, 404);
     assert_eq!(body["kind"], "Status");
     assert_eq!(body["reason"], "NotFound");
@@ -199,7 +247,11 @@ async fn gets_single_pod_and_reports_missing_ones() {
     let (status, _) = get(&base, "/apis/metrics.k8s.io/v1/namespaces/default/pods/dns").await;
     assert_eq!(status, 404);
 
-    let (status, _) = get(&base, "/apis/metrics.k8s.io/v1/namespaces/default/pods/BAD..name").await;
+    let (status, _) = get(
+        &base,
+        "/apis/metrics.k8s.io/v1/namespaces/default/pods/BAD..name",
+    )
+    .await;
     assert_eq!(status, 400);
 }
 
@@ -232,16 +284,28 @@ async fn lists_and_gets_nodes() {
 async fn filters_by_label_selector() {
     let base = adapter(Duration::from_secs(60)).await;
 
-    let (status, body) = get(&base, "/apis/metrics.k8s.io/v1/namespaces/default/pods?labelSelector=app%3Dweb").await;
+    let (status, body) = get(
+        &base,
+        "/apis/metrics.k8s.io/v1/namespaces/default/pods?labelSelector=app%3Dweb",
+    )
+    .await;
     assert_eq!(status, 200);
     let items = body["items"].as_array().unwrap();
     assert_eq!(items.len(), 1);
     assert_eq!(items[0]["metadata"]["name"], "web");
 
-    let (_, body) = get(&base, "/apis/metrics.k8s.io/v1/pods?labelSelector=app%3Dnothing").await;
+    let (_, body) = get(
+        &base,
+        "/apis/metrics.k8s.io/v1/pods?labelSelector=app%3Dnothing",
+    )
+    .await;
     assert!(body["items"].as_array().unwrap().is_empty());
 
-    let (status, body) = get(&base, "/apis/metrics.k8s.io/v1/pods?labelSelector=env+in+(a%2Cb)").await;
+    let (status, body) = get(
+        &base,
+        "/apis/metrics.k8s.io/v1/pods?labelSelector=env+in+(a%2Cb)",
+    )
+    .await;
     assert_eq!(status, 400);
     assert_eq!(body["reason"], "BadRequest");
 }
@@ -272,8 +336,24 @@ async fn health_endpoints_reflect_snapshot_availability() {
     .await;
 
     let client = reqwest::Client::new();
-    assert_eq!(client.get(format!("{base}/healthz")).send().await.unwrap().status(), 200);
-    assert_eq!(client.get(format!("{base}/readyz")).send().await.unwrap().status(), 503);
+    assert_eq!(
+        client
+            .get(format!("{base}/healthz"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
+    assert_eq!(
+        client
+            .get(format!("{base}/readyz"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        503
+    );
     let (status, body) = get(&base, "/apis/metrics.k8s.io/v1/pods").await;
     assert_eq!(status, 503);
     assert_eq!(body["reason"], "ServiceUnavailable");
@@ -282,7 +362,15 @@ async fn health_endpoints_reflect_snapshot_availability() {
         prom_metrics::metrics::Inputs::default(),
         Duration::from_secs(60),
     ));
-    assert_eq!(client.get(format!("{base}/readyz")).send().await.unwrap().status(), 200);
+    assert_eq!(
+        client
+            .get(format!("{base}/readyz"))
+            .send()
+            .await
+            .unwrap()
+            .status(),
+        200
+    );
 
     let text = client
         .get(format!("{base}/metrics"))

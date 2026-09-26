@@ -16,7 +16,9 @@ use serde_json::json;
 
 use crate::{
     error::{k8s_status, not_found},
-    metrics::{format_cpu, format_memory, sanitize_label_key, NodeMetric, PodMetric, Snapshot, Store},
+    metrics::{
+        format_cpu, format_memory, sanitize_label_key, NodeMetric, PodMetric, Snapshot, Store,
+    },
 };
 
 #[derive(Clone)]
@@ -36,7 +38,10 @@ pub fn router(state: AppState) -> Router {
         .route("/apis/metrics.k8s.io/{version}/nodes", get(list_nodes))
         .route("/apis/metrics.k8s.io/{version}/nodes/{name}", get(get_node))
         .route("/apis/metrics.k8s.io/{version}/pods", get(list_pods))
-        .route("/apis/metrics.k8s.io/{version}/namespaces/{namespace}/pods", get(list_pods_in_ns))
+        .route(
+            "/apis/metrics.k8s.io/{version}/namespaces/{namespace}/pods",
+            get(list_pods_in_ns),
+        )
         .route(
             "/apis/metrics.k8s.io/{version}/namespaces/{namespace}/pods/{name}",
             get(get_pod),
@@ -91,7 +96,11 @@ async fn self_metrics(State(state): State<AppState>) -> Response {
 }
 
 async fn fallback() -> Response {
-    k8s_status(StatusCode::NOT_FOUND, "NotFound", "the server could not find the requested resource")
+    k8s_status(
+        StatusCode::NOT_FOUND,
+        "NotFound",
+        "the server could not find the requested resource",
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -218,7 +227,11 @@ fn pod_out<'a>(snap: &'a Snapshot, pod: &'a PodMetric, gv: Option<&'a str>) -> P
     }
 }
 
-fn node_out<'a>(snap: &'a Snapshot, node: &'a NodeMetric, gv: Option<&'a str>) -> NodeMetricsOut<'a> {
+fn node_out<'a>(
+    snap: &'a Snapshot,
+    node: &'a NodeMetric,
+    gv: Option<&'a str>,
+) -> NodeMetricsOut<'a> {
     NodeMetricsOut {
         api_version: gv,
         kind: gv.map(|_| "NodeMetrics"),
@@ -332,7 +345,11 @@ async fn list_pods_in_ns(
         Err(e) => return *e,
     };
     if !valid_name(&namespace) {
-        return k8s_status(StatusCode::BAD_REQUEST, "BadRequest", "invalid namespace name");
+        return k8s_status(
+            StatusCode::BAD_REQUEST,
+            "BadRequest",
+            "invalid namespace name",
+        );
     }
     let items = req
         .snapshot
@@ -358,7 +375,11 @@ async fn get_pod(
         Err(e) => return *e,
     };
     if !valid_name(&namespace) || !valid_name(&name) {
-        return k8s_status(StatusCode::BAD_REQUEST, "BadRequest", "invalid resource name");
+        return k8s_status(
+            StatusCode::BAD_REQUEST,
+            "BadRequest",
+            "invalid resource name",
+        );
     }
     match req.snapshot.pods.get(&(namespace, name.clone())) {
         Some(pod) => Json(pod_out(&req.snapshot, pod, Some(&req.group_version))).into_response(),
@@ -391,13 +412,20 @@ async fn list_nodes(
     .into_response()
 }
 
-async fn get_node(State(state): State<AppState>, Path((version, name)): Path<(String, String)>) -> Response {
+async fn get_node(
+    State(state): State<AppState>,
+    Path((version, name)): Path<(String, String)>,
+) -> Response {
     let req = match prepare(&state, &version, &ListParams::default()) {
         Ok(r) => r,
         Err(e) => return *e,
     };
     if !valid_name(&name) {
-        return k8s_status(StatusCode::BAD_REQUEST, "BadRequest", "invalid resource name");
+        return k8s_status(
+            StatusCode::BAD_REQUEST,
+            "BadRequest",
+            "invalid resource name",
+        );
     }
     match req.snapshot.nodes.get(&name) {
         Some(node) => Json(node_out(&req.snapshot, node, Some(&req.group_version))).into_response(),
@@ -432,7 +460,10 @@ fn parse_selector(raw: &str) -> Result<Vec<Requirement>, String> {
             Requirement::Eq(sanitize_label_key(k.trim()), v.trim().to_string())
         } else if let Some(k) = part.strip_prefix('!') {
             Requirement::NotExists(sanitize_label_key(k.trim()))
-        } else if part.chars().all(|c| c.is_ascii_alphanumeric() || "-._/".contains(c)) {
+        } else if part
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "-._/".contains(c))
+        {
             Requirement::Exists(sanitize_label_key(part))
         } else {
             return Err(format!("unsupported label selector expression: {part:?}"));
@@ -456,7 +487,10 @@ mod tests {
     use super::*;
 
     fn labels(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-        pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.to_string()))
+            .collect()
     }
 
     #[test]
@@ -473,7 +507,10 @@ mod tests {
         );
         assert_eq!(
             parse_selector("app.kubernetes.io/name==web").unwrap(),
-            vec![Requirement::Eq("app_kubernetes_io_name".into(), "web".into())]
+            vec![Requirement::Eq(
+                "app_kubernetes_io_name".into(),
+                "web".into()
+            )]
         );
     }
 
@@ -490,7 +527,10 @@ mod tests {
         assert!(selector_matches(&parse_selector("app!=api").unwrap(), &l));
         assert!(selector_matches(&parse_selector("missing!=x").unwrap(), &l));
         assert!(selector_matches(&parse_selector("app,tier").unwrap(), &l));
-        assert!(!selector_matches(&parse_selector("app,missing").unwrap(), &l));
+        assert!(!selector_matches(
+            &parse_selector("app,missing").unwrap(),
+            &l
+        ));
         assert!(selector_matches(&[], &l));
     }
 
@@ -507,7 +547,10 @@ mod tests {
     #[test]
     fn only_known_versions_resolve() {
         assert_eq!(group_version("v1").as_deref(), Some("metrics.k8s.io/v1"));
-        assert_eq!(group_version("v1beta1").as_deref(), Some("metrics.k8s.io/v1beta1"));
+        assert_eq!(
+            group_version("v1beta1").as_deref(),
+            Some("metrics.k8s.io/v1beta1")
+        );
         assert!(group_version("v2").is_none());
     }
 }

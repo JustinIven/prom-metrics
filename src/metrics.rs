@@ -75,7 +75,11 @@ impl Snapshot {
 pub fn format_cpu(cores: f64) -> String {
     // No lossless conversion exists between `f64` and `u64`; the value is
     // clamped to a finite, non-negative range immediately above.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::as_conversions
+    )]
     let milli = if cores.is_finite() && cores > 0.0 {
         (cores * 1000.0).round() as u64
     } else {
@@ -90,7 +94,11 @@ pub fn format_cpu(cores: f64) -> String {
 pub fn format_memory(bytes: f64) -> String {
     // No lossless conversion exists between `f64` and `u64`; the value is
     // clamped to a finite, non-negative range immediately above.
-    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::as_conversions
+    )]
     let b = if bytes.is_finite() && bytes > 0.0 {
         bytes.round() as u64
     } else {
@@ -171,7 +179,8 @@ fn queries(window: Duration) -> [String; 6] {
 /// # Errors
 /// Returns an error if any of the required Prometheus queries fail.
 pub async fn collect(client: &PromClient, window: Duration) -> Result<Snapshot, Error> {
-    let [q_pod_cpu, q_pod_mem, q_node_cpu, q_node_mem, q_pod_labels, q_node_labels] = queries(window);
+    let [q_pod_cpu, q_pod_mem, q_node_cpu, q_node_mem, q_pod_labels, q_node_labels] =
+        queries(window);
 
     let (pod_cpu, pod_mem, node_cpu, node_mem) = tokio::try_join!(
         client.query(&q_pod_cpu),
@@ -181,7 +190,8 @@ pub async fn collect(client: &PromClient, window: Duration) -> Result<Snapshot, 
     )?;
 
     // Label metadata is optional: kube-state-metrics may not be installed.
-    let (pod_labels, node_labels) = tokio::join!(client.query(&q_pod_labels), client.query(&q_node_labels));
+    let (pod_labels, node_labels) =
+        tokio::join!(client.query(&q_pod_labels), client.query(&q_node_labels));
 
     Ok(build_snapshot(
         Inputs {
@@ -221,7 +231,8 @@ pub fn build_snapshot(input: Inputs, window: Duration) -> Snapshot {
     let mut containers: BTreeMap<(String, String), BTreeMap<String, (f64, f64)>> = BTreeMap::new();
     for (samples, is_cpu) in [(&pod_cpu, true), (&pod_mem, false)] {
         for s in samples {
-            let (Some(ns), Some(pod), Some(container)) = (s.label("namespace"), s.label("pod"), s.label("container"))
+            let (Some(ns), Some(pod), Some(container)) =
+                (s.label("namespace"), s.label("pod"), s.label("container"))
             else {
                 continue; // cannot be tied to a Kubernetes object
             };
@@ -243,7 +254,10 @@ pub fn build_snapshot(input: Inputs, window: Duration) -> Snapshot {
     }
 
     let mut pod_label_map = extract_labels(&pod_labels, |s| {
-        Some((s.label("namespace")?.to_string(), s.label("pod")?.to_string()))
+        Some((
+            s.label("namespace")?.to_string(),
+            s.label("pod")?.to_string(),
+        ))
     });
 
     let pods = containers
@@ -271,7 +285,9 @@ pub fn build_snapshot(input: Inputs, window: Duration) -> Snapshot {
     let mut nodes: BTreeMap<String, NodeMetric> = BTreeMap::new();
     for (samples, is_cpu) in [(&node_cpu, true), (&node_mem, false)] {
         for s in samples {
-            let Some(node) = s.label("node") else { continue };
+            let Some(node) = s.label("node") else {
+                continue;
+            };
             let entry = nodes.entry(node.to_string()).or_insert_with(|| NodeMetric {
                 name: node.to_string(),
                 cpu_cores: 0.0,
@@ -325,7 +341,13 @@ fn extract_labels<K: Ord>(
 #[must_use]
 pub fn sanitize_label_key(key: &str) -> String {
     key.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -352,7 +374,10 @@ impl Store {
     #[must_use]
     pub fn load(&self) -> Option<std::sync::Arc<Snapshot>> {
         // Recover the value instead of panicking if a prior holder panicked while locked.
-        self.snapshot.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
+        self.snapshot
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     /// Atomically swaps in a freshly built snapshot.
@@ -362,11 +387,17 @@ impl Store {
         self.stats.cached_pods.store(pods, Ordering::Relaxed);
         self.stats.cached_nodes.store(nodes, Ordering::Relaxed);
         self.stats.last_success_unix.store(
-            SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map_or(0, |d| d.as_secs()),
             Ordering::Relaxed,
         );
         // Recover the value instead of panicking if a prior holder panicked while locked.
-        *self.snapshot.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::sync::Arc::new(snapshot));
+        *self
+            .snapshot
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) =
+            Some(std::sync::Arc::new(snapshot));
     }
 }
 
@@ -419,7 +450,10 @@ mod tests {
 
     #[test]
     fn sanitizes_label_keys() {
-        assert_eq!(sanitize_label_key("app.kubernetes.io/name"), "app_kubernetes_io_name");
+        assert_eq!(
+            sanitize_label_key("app.kubernetes.io/name"),
+            "app_kubernetes_io_name"
+        );
         assert_eq!(sanitize_label_key("app"), "app");
     }
 
@@ -434,13 +468,19 @@ mod tests {
 
     fn sample(labels: &[(&str, &str)], value: f64) -> Sample {
         Sample {
-            metric: labels.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect(),
+            metric: labels
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.to_string()))
+                .collect(),
             value: (0.0, value.to_string()),
         }
     }
 
     fn container<'a>(pod: &'a PodMetric, name: &str) -> &'a ContainerMetric {
-        pod.containers.iter().find(|c| c.name == name).expect("container")
+        pod.containers
+            .iter()
+            .find(|c| c.name == name)
+            .expect("container")
     }
 
     #[test]
@@ -449,22 +489,71 @@ mod tests {
         let snap = build_snapshot(
             Inputs {
                 pod_cpu: vec![
-                    sample(&[("namespace", "default"), ("pod", "web"), ("container", "app")], 0.25),
-                    sample(&[("namespace", "default"), ("pod", "web"), ("container", "sidecar")], 0.0),
+                    sample(
+                        &[
+                            ("namespace", "default"),
+                            ("pod", "web"),
+                            ("container", "app"),
+                        ],
+                        0.25,
+                    ),
+                    sample(
+                        &[
+                            ("namespace", "default"),
+                            ("pod", "web"),
+                            ("container", "sidecar"),
+                        ],
+                        0.0,
+                    ),
                     // pause container must be dropped
-                    sample(&[("namespace", "default"), ("pod", "web"), ("container", "POD")], 9.0),
+                    sample(
+                        &[
+                            ("namespace", "default"),
+                            ("pod", "web"),
+                            ("container", "POD"),
+                        ],
+                        9.0,
+                    ),
                     // no container label: cannot be mapped to a Kubernetes object
                     sample(&[("namespace", "default"), ("pod", "web")], 5.0),
                     // unidentifiable series
                     sample(&[("container", "orphan")], 1.0),
                     // memory-only container also appears below
-                    sample(&[("namespace", "kube-system"), ("pod", "dns"), ("container", "coredns")], 0.002),
+                    sample(
+                        &[
+                            ("namespace", "kube-system"),
+                            ("pod", "dns"),
+                            ("container", "coredns"),
+                        ],
+                        0.002,
+                    ),
                 ],
                 pod_mem: vec![
-                    sample(&[("namespace", "default"), ("pod", "web"), ("container", "app")], 64.0 * mi),
+                    sample(
+                        &[
+                            ("namespace", "default"),
+                            ("pod", "web"),
+                            ("container", "app"),
+                        ],
+                        64.0 * mi,
+                    ),
                     // CPU sample missing for this container -> cpu defaults to zero
-                    sample(&[("namespace", "default"), ("pod", "web"), ("container", "init")], 8.0 * mi),
-                    sample(&[("namespace", "kube-system"), ("pod", "dns"), ("container", "coredns")], 16.0 * mi),
+                    sample(
+                        &[
+                            ("namespace", "default"),
+                            ("pod", "web"),
+                            ("container", "init"),
+                        ],
+                        8.0 * mi,
+                    ),
+                    sample(
+                        &[
+                            ("namespace", "kube-system"),
+                            ("pod", "dns"),
+                            ("container", "coredns"),
+                        ],
+                        16.0 * mi,
+                    ),
                 ],
                 ..Default::default()
             },
@@ -486,7 +575,10 @@ mod tests {
     fn aggregates_nodes_and_ignores_unidentified_series() {
         let snap = build_snapshot(
             Inputs {
-                node_cpu: vec![sample(&[("node", "n1")], 1.5), sample(&[("instance", "1.2.3.4")], 9.0)],
+                node_cpu: vec![
+                    sample(&[("node", "n1")], 1.5),
+                    sample(&[("instance", "1.2.3.4")], 9.0),
+                ],
                 node_mem: vec![
                     sample(&[("node", "n1")], 2.0 * 1024.0 * 1024.0 * 1024.0),
                     sample(&[("node", "n2")], 1024.0),
@@ -505,7 +597,14 @@ mod tests {
     fn attaches_kube_state_metrics_labels() {
         let snap = build_snapshot(
             Inputs {
-                pod_cpu: vec![sample(&[("namespace", "default"), ("pod", "web"), ("container", "app")], 0.1)],
+                pod_cpu: vec![sample(
+                    &[
+                        ("namespace", "default"),
+                        ("pod", "web"),
+                        ("container", "app"),
+                    ],
+                    0.1,
+                )],
                 pod_labels: vec![sample(
                     &[
                         ("namespace", "default"),
@@ -531,15 +630,27 @@ mod tests {
         let snap = build_snapshot(
             Inputs {
                 pod_cpu: vec![
-                    sample(&[("namespace", "a"), ("pod", "p1"), ("container", "c")], 0.1),
-                    sample(&[("namespace", "ab"), ("pod", "p2"), ("container", "c")], 0.1),
-                    sample(&[("namespace", "b"), ("pod", "p3"), ("container", "c")], 0.1),
+                    sample(
+                        &[("namespace", "a"), ("pod", "p1"), ("container", "c")],
+                        0.1,
+                    ),
+                    sample(
+                        &[("namespace", "ab"), ("pod", "p2"), ("container", "c")],
+                        0.1,
+                    ),
+                    sample(
+                        &[("namespace", "b"), ("pod", "p3"), ("container", "c")],
+                        0.1,
+                    ),
                 ],
                 ..Default::default()
             },
             Duration::from_secs(60),
         );
-        let names: Vec<_> = snap.pods_in_namespace("a").map(|p| p.name.clone()).collect();
+        let names: Vec<_> = snap
+            .pods_in_namespace("a")
+            .map(|p| p.name.clone())
+            .collect();
         assert_eq!(names, vec!["p1"]);
         assert_eq!(snap.pods_in_namespace("missing").count(), 0);
     }

@@ -61,7 +61,12 @@ async fn run() -> Result<(), Error> {
 
     let client = PromClient::new(&cfg.prometheus_url, cfg.poll_interval)?;
     let store = Arc::new(Store::default());
-    tokio::spawn(poll_loop(client, store.clone(), cfg.poll_interval, cfg.cpu_rate_window));
+    tokio::spawn(poll_loop(
+        client,
+        store.clone(),
+        cfg.poll_interval,
+        cfg.cpu_rate_window,
+    ));
 
     let app = api::router(AppState {
         store,
@@ -94,10 +99,18 @@ async fn poll_loop(client: PromClient, store: Arc<Store>, interval: Duration, wi
             Ok(snapshot) => {
                 let (pods, nodes) = (snapshot.pods.len(), snapshot.nodes.len());
                 let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
-                store.stats.last_duration_micros.store(micros, Ordering::Relaxed);
+                store
+                    .stats
+                    .last_duration_micros
+                    .store(micros, Ordering::Relaxed);
                 store.replace(snapshot);
                 if ready {
-                    tracing::debug!(pods, nodes, duration_ms = started.elapsed().as_millis(), "refreshed");
+                    tracing::debug!(
+                        pods,
+                        nodes,
+                        duration_ms = started.elapsed().as_millis(),
+                        "refreshed"
+                    );
                 } else {
                     ready = true;
                     info!(pods, nodes, "initial metrics snapshot ready");
