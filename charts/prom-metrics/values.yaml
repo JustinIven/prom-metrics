@@ -1,0 +1,173 @@
+# -- Adapter settings, rendered as environment variables.
+prometheus:
+  # PROMETHEUS_URL. Plain http:// only; the adapter carries no TLS client.
+  url: http://prometheus-operated.monitoring.svc:9090
+
+# POLL_INTERVAL: snapshot refresh period, also the Prometheus query timeout.
+pollInterval: 15s
+# MAX_METRICS_AGE: older snapshots are answered with 503. Keep >= 3x pollInterval.
+maxMetricsAge: 60s
+# CPU_RATE_WINDOW: PromQL range window. Must be >= 2x the Prometheus scrape interval.
+cpuRateWindow: 60s
+# RUST_LOG
+logLevel: info
+# Additional environment variables for the container.
+extraEnv: []
+
+image:
+  repository: ghcr.io/justiniven/prom-metrics
+  # Defaults to the chart appVersion.
+  tag: ""
+  # Takes precedence over tag, e.g. sha256:abcd...
+  digest: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+namespaceOverride: ""
+commonLabels: {}
+
+apiService:
+  create: true
+  v1:
+    create: true
+  v1beta1:
+    create: true
+  annotations: {}
+  # Only needed for tls.type=existingSecret; helm and cert-manager fill it in.
+  caBundle: ""
+  # Avoid in production. Not needed with any tls.type below.
+  insecureSkipTLSVerify: false
+
+tls:
+  # helm | cert-manager | existingSecret
+  type: helm
+  clusterDomain: cluster.local
+  helm:
+    certDurationDays: 3650
+    # Reuse the Secret from a previous release instead of regenerating (disable for GitOps renderers without cluster access).
+    lookup: true
+  certManager:
+    addInjectorAnnotations: true
+    # When disabled, a self-signed Issuer is created.
+    existingIssuer:
+      enabled: false
+      group: cert-manager.io
+      kind: Issuer
+      name: my-issuer
+    duration: ""
+    renewBefore: ""
+    annotations: {}
+    labels: {}
+  existingSecret:
+    # Secret with tls.crt and tls.key (and optionally ca.crt).
+    name: ""
+    # Read ca.crt from the Secret to fill apiService.caBundle when that is empty.
+    lookup: true
+
+replicas: 2
+revisionHistoryLimit: 5
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxUnavailable: 0
+    maxSurge: 1
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+  maxUnavailable: null
+  unhealthyPodEvictionPolicy: null
+
+# Losing this pod stops every HPA in the cluster.
+priorityClassName: system-cluster-critical
+
+deploymentAnnotations: {}
+podLabels: {}
+podAnnotations: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+
+containerPort: 8443
+
+livenessProbe:
+  httpGet:
+    path: /livez
+    port: https
+    scheme: HTTPS
+  periodSeconds: 20
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /readyz
+    port: https
+    scheme: HTTPS
+  periodSeconds: 10
+  failureThreshold: 6
+
+# No CPU limit on purpose: throttling only adds latency to aggregation-layer requests.
+resources:
+  requests:
+    cpu: 10m
+    memory: 32Mi
+  limits:
+    memory: 64Mi
+
+service:
+  type: ClusterIP
+  port: 443
+  annotations: {}
+  labels: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+# A missing labelSelector is filled with the chart's selector labels.
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: ScheduleAnyway
+
+extraVolumes: []
+extraVolumeMounts: []
+
+serviceMonitor:
+  enabled: false
+  additionalLabels: {}
+  interval: 1m
+  scrapeTimeout: 10s
+  relabelings: []
+  metricRelabelings: []
+  tlsConfig:
+    insecureSkipVerify: true
+
+prometheusRule:
+  enabled: false
+  additionalLabels: {}
+  # Seconds without a successful refresh before PromMetricsStale fires.
+  staleAfterSeconds: 120
+  # Refresh duration that triggers PromMetricsSlowRefresh; keep below pollInterval.
+  slowRefreshSeconds: 5
+  # Extra rules appended to the default group.
+  extraRules: []
+
+networkPolicy:
+  enabled: false
+  # Peers allowed to reach the adapter; empty allows any source on containerPort only.
+  ingressFrom: []
+  # Peers hosting Prometheus; empty allows any destination on prometheusPort.
+  prometheusTo: []
+  prometheusPort: 9090

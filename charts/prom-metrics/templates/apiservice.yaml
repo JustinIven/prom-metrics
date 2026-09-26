@@ -1,0 +1,37 @@
+{{- if .Values.apiService.create }}
+{{- $caBundle := include "prom-metrics.caBundle" . }}
+{{- range $version, $priority := dict "v1beta1" 100 "v1" 200 }}
+{{- if (index $.Values.apiService $version).create }}
+---
+apiVersion: apiregistration.k8s.io/v1
+kind: APIService
+metadata:
+  name: {{ $version }}.metrics.k8s.io
+  labels:
+    {{- include "prom-metrics.labels" $ | nindent 4 }}
+  {{- if or $.Values.apiService.annotations (and (eq $.Values.tls.type "cert-manager") $.Values.tls.certManager.addInjectorAnnotations) }}
+  annotations:
+    {{- if and (eq $.Values.tls.type "cert-manager") $.Values.tls.certManager.addInjectorAnnotations }}
+    cert-manager.io/inject-ca-from: {{ printf "%s/%s" (include "prom-metrics.namespace" $) (include "prom-metrics.fullname" $) }}
+    {{- end }}
+    {{- with $.Values.apiService.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+spec:
+  group: metrics.k8s.io
+  version: {{ $version }}
+  groupPriorityMinimum: 100
+  versionPriority: {{ $priority }}
+  {{- if $.Values.apiService.insecureSkipTLSVerify }}
+  insecureSkipTLSVerify: true
+  {{- else if $caBundle }}
+  caBundle: {{ $caBundle }}
+  {{- end }}
+  service:
+    name: {{ include "prom-metrics.fullname" $ }}
+    namespace: {{ include "prom-metrics.namespace" $ }}
+    port: {{ $.Values.service.port }}
+{{- end }}
+{{- end }}
+{{- end }}

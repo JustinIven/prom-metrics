@@ -1,0 +1,16 @@
+apiVersion: v2
+name: prom-metrics
+description: Kubernetes Resource Metrics API (metrics.k8s.io) served from Prometheus — a drop-in replacement for metrics-server.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+kubeVersion: ">=1.23.0-0"
+home: https://github.com/justiniven/prom-metrics
+sources:
+  - https://github.com/justiniven/prom-metrics
+keywords:
+  - metrics
+  - metrics-server
+  - prometheus
+  - hpa
+  - autoscaling

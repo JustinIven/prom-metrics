@@ -1,0 +1,19 @@
+prom-metrics serves metrics.k8s.io from {{ .Values.prometheus.url }}.
+
+Verify once the pods are Ready:
+
+  kubectl get apiservices | grep metrics.k8s.io
+  kubectl top nodes
+{{- if .Values.apiService.create }}
+
+Only one provider can own metrics.k8s.io. If metrics-server is installed, uninstall it first.
+{{- end }}
+{{- if .Values.apiService.insecureSkipTLSVerify }}
+
+WARNING: apiService.insecureSkipTLSVerify=true; the API server does not verify this backend.
+{{- end }}
+{{- if ne .Values.tls.type "helm" }}
+
+The adapter does not reload certificates. Restart it after the serving certificate is renewed:
+  kubectl -n {{ include "prom-metrics.namespace" . }} rollout restart deploy/{{ include "prom-metrics.fullname" . }}
+{{- end }}

@@ -1,0 +1,64 @@
+{{- if eq .Values.tls.type "helm" }}
+{{- $tls := include "prom-metrics.helmTLS" . | fromJson }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "prom-metrics.tlsSecretName" . }}
+  namespace: {{ include "prom-metrics.namespace" . }}
+  labels:
+    {{- include "prom-metrics.labels" . | nindent 4 }}
+type: kubernetes.io/tls
+data:
+  tls.crt: {{ $tls.crt }}
+  tls.key: {{ $tls.key }}
+  ca.crt: {{ $tls.ca }}
+{{- else if eq .Values.tls.type "cert-manager" }}
+{{- $certName := include "prom-metrics.fullname" . }}
+{{- if not .Values.tls.certManager.existingIssuer.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: {{ $certName }}-selfsigned
+  namespace: {{ include "prom-metrics.namespace" . }}
+  labels:
+    {{- include "prom-metrics.labels" . | nindent 4 }}
+spec:
+  selfSigned: {}
+---
+{{- end }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $certName }}
+  namespace: {{ include "prom-metrics.namespace" . }}
+  labels:
+    {{- include "prom-metrics.labels" . | nindent 4 }}
+    {{- with .Values.tls.certManager.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with .Values.tls.certManager.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ include "prom-metrics.tlsSecretName" . }}
+  commonName: {{ include "prom-metrics.dnsNames" . | fromJsonArray | first }}
+  dnsNames:
+    {{- include "prom-metrics.dnsNames" . | fromJsonArray | toYaml | nindent 4 }}
+  {{- with .Values.tls.certManager.duration }}
+  duration: {{ . }}
+  {{- end }}
+  {{- with .Values.tls.certManager.renewBefore }}
+  renewBefore: {{ . }}
+  {{- end }}
+  issuerRef:
+    {{- if .Values.tls.certManager.existingIssuer.enabled }}
+    group: {{ .Values.tls.certManager.existingIssuer.group }}
+    kind: {{ .Values.tls.certManager.existingIssuer.kind }}
+    name: {{ .Values.tls.certManager.existingIssuer.name }}
+    {{- else }}
+    group: cert-manager.io
+    kind: Issuer
+    name: {{ $certName }}-selfsigned
+    {{- end }}
+{{- end }}

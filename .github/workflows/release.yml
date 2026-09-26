@@ -29,6 +29,13 @@ jobs:
             echo "::error::tag v$tag_version does not match Cargo.toml version $cargo_version"
             exit 1
           fi
+          for field in version appVersion; do
+            chart_value="$(sed -nE "s/^$field: \"?([^\"]*)\"?/\1/p" charts/prom-metrics/Chart.yaml)"
+            if [ "$tag_version" != "$chart_value" ]; then
+              echo "::error::tag v$tag_version does not match Chart.yaml $field $chart_value"
+              exit 1
+            fi
+          done
 
   build-and-push:
     needs: check-version
@@ -69,8 +76,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  release:
+  chart:
     needs: build-and-push
+    uses: ./.github/workflows/chart.yml
+    with:
+      publish: true
+    permissions:
+      contents: read
+      packages: write
+
+  release:
+    needs: chart
     runs-on: ubuntu-latest
     permissions:
       contents: write

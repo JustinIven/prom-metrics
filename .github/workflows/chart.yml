@@ -1,0 +1,76 @@
+name: Chart
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - charts/**
+      - .github/workflows/chart.yml
+  pull_request:
+    paths:
+      - charts/**
+      - .github/workflows/chart.yml
+  workflow_call:
+    inputs:
+      publish:
+        description: Package and push the chart to GHCR.
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  CHART_DIR: charts/prom-metrics
+  HELM_VERSION: v4.3.0
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: helm lint
+        run: helm lint "$CHART_DIR" --strict
+
+      - name: helm template
+        run: |
+          render() { helm template prom-metrics "$CHART_DIR" -n kube-system "$@" > /dev/null; }
+          render
+          render --set tls.type=cert-manager
+          render --set tls.type=cert-manager --set tls.certManager.existingIssuer.enabled=true
+          render --set tls.type=existingSecret --set tls.existingSecret.name=tls --set-string apiService.caBundle=PEM
+          render --set apiService.insecureSkipTLSVerify=true
+          render --set serviceMonitor.enabled=true --set prometheusRule.enabled=true --set networkPolicy.enabled=true
+
+  publish:
+    if: inputs.publish
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+
+      - name: Package
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          helm package "$CHART_DIR" --version "$version" --app-version "$version" --destination dist
+
+      - name: Push to GHCR
+        env:
+          HELM_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # OCI repository names must be lowercase; "charts/" keeps the chart apart from the image of the same name.
+          owner="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "$HELM_REGISTRY_PASSWORD" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          helm push dist/*.tgz "oci://ghcr.io/$owner/charts"
