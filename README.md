@@ -6,8 +6,29 @@ A tiny Rust binary that serves the Kubernetes **Resource Metrics API**
 the Prometheus you already run. It is **not** a Prometheus Adapter: no rules, no
 custom/external metrics.
 
-```
-Prometheus  ──6 PromQL queries every POLL_INTERVAL──▶  in-memory snapshot  ──▶  metrics.k8s.io
+```mermaid
+flowchart LR
+    prom[("Prometheus")]
+
+    subgraph adapter["prom-metrics"]
+        poll["poll loop"]
+        snap[("in-memory<br/>snapshot")]
+        api["metrics.k8s.io<br/>v1 · v1beta1"]
+        poll -- "atomic swap" --> snap
+        snap -- "lookup, no I/O" --> api
+    end
+
+    apiserver["kube-apiserver<br/>aggregation layer"]
+
+    subgraph clients["Consumers"]
+        top["kubectl top"]
+        hpa["HPA"]
+        vpa["VPA"]
+    end
+
+    poll -- "6 PromQL queries<br/>every POLL_INTERVAL" --> prom
+    apiserver -- "HTTPS :443" --> api
+    top & hpa & vpa --> apiserver
 ```
 
 ## Requirements
