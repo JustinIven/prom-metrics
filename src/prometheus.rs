@@ -13,6 +13,7 @@ pub struct Sample {
 }
 
 impl Sample {
+    #[must_use]
     pub fn number(&self) -> f64 {
         match self.value.1.parse::<f64>() {
             Ok(v) if v.is_finite() => v,
@@ -46,6 +47,8 @@ pub struct PromClient {
 }
 
 impl PromClient {
+    /// # Errors
+    /// Returns an error if the HTTP client cannot be constructed.
     pub fn new(base_url: &str, timeout: Duration) -> Result<Self, Error> {
         let http = reqwest::Client::builder()
             .timeout(timeout)
@@ -58,7 +61,10 @@ impl PromClient {
         })
     }
 
-    /// Executes one internally defined PromQL query. Never fed by HTTP clients.
+    /// Executes one internally defined `PromQL` query. Never fed by HTTP clients.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or Prometheus reports an error status.
     pub async fn query(&self, promql: &str) -> Result<Vec<Sample>, Error> {
         let resp = self
             .http
@@ -83,6 +89,7 @@ impl PromClient {
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 

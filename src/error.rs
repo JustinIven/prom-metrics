@@ -17,9 +17,9 @@ pub enum Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Error::Config(m) => write!(f, "configuration error: {m}"),
-            Error::Prometheus(m) => write!(f, "prometheus error: {m}"),
-            Error::Io(e) => write!(f, "io error: {e}"),
+            Self::Config(m) => write!(f, "configuration error: {m}"),
+            Self::Prometheus(m) => write!(f, "prometheus error: {m}"),
+            Self::Io(e) => write!(f, "io error: {e}"),
         }
     }
 }
@@ -28,14 +28,14 @@ impl std::error::Error for Error {}
 
 impl From<std::io::Error> for Error {
     fn from(e: std::io::Error) -> Self {
-        Error::Io(e)
+        Self::Io(e)
     }
 }
 
 impl From<reqwest::Error> for Error {
     // Never render the URL: it may carry credentials.
     fn from(e: reqwest::Error) -> Self {
-        Error::Prometheus(format!("{}", e.without_url()))
+        Self::Prometheus(format!("{}", e.without_url()))
     }
 }
 
@@ -53,6 +53,7 @@ pub fn k8s_status(code: StatusCode, reason: &str, message: impl Into<String>) ->
     (code, Json(body)).into_response()
 }
 
+#[must_use]
 pub fn not_found(resource: &str, name: &str) -> Response {
     k8s_status(
         StatusCode::NOT_FOUND,

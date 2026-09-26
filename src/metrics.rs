@@ -53,6 +53,7 @@ pub struct Snapshot {
 }
 
 impl Snapshot {
+    #[must_use]
     pub fn age(&self) -> Duration {
         self.taken_at.elapsed()
     }
@@ -70,7 +71,11 @@ impl Snapshot {
 // ---------------------------------------------------------------------------
 
 /// Cores -> Kubernetes CPU quantity in millicores (`250m`).
+#[must_use]
 pub fn format_cpu(cores: f64) -> String {
+    // No lossless conversion exists between `f64` and `u64`; the value is
+    // clamped to a finite, non-negative range immediately above.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
     let milli = if cores.is_finite() && cores > 0.0 {
         (cores * 1000.0).round() as u64
     } else {
@@ -81,12 +86,19 @@ pub fn format_cpu(cores: f64) -> String {
 
 /// Bytes -> Kubernetes memory quantity, using the largest binary suffix that
 /// divides exactly so no precision is lost (`64Mi`, `1536Ki`, `1234567`).
+#[must_use]
 pub fn format_memory(bytes: f64) -> String {
+    // No lossless conversion exists between `f64` and `u64`; the value is
+    // clamped to a finite, non-negative range immediately above.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
     let b = if bytes.is_finite() && bytes > 0.0 {
         bytes.round() as u64
     } else {
         0
     };
+    // `factor` is one of three non-zero compile-time constants; division and
+    // remainder can never panic here.
+    #[allow(clippy::arithmetic_side_effects)]
     for (factor, suffix) in [(1u64 << 30, "Gi"), (1 << 20, "Mi"), (1 << 10, "Ki")] {
         if b >= factor && b % factor == 0 {
             return format!("{}{}", b / factor, suffix);
@@ -96,12 +108,16 @@ pub fn format_memory(bytes: f64) -> String {
 }
 
 /// `metav1.Duration` wire format; `time.ParseDuration` accepts plain seconds.
+#[must_use]
 pub fn format_window(d: Duration) -> String {
     format!("{}s", d.as_secs().max(1))
 }
 
+#[must_use]
 pub fn rfc3339(t: SystemTime) -> String {
-    let secs = t.duration_since(UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let secs = t
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX));
     let (y, m, d) = civil_from_days(secs.div_euclid(86_400));
     let rem = secs.rem_euclid(86_400);
     format!(
@@ -113,7 +129,9 @@ pub fn rfc3339(t: SystemTime) -> String {
 }
 
 /// Howard Hinnant's days-from-civil inverse.
-fn civil_from_days(z: i64) -> (i64, i64, i64) {
+// Bounded integer date arithmetic; cannot realistically overflow or divide by zero.
+#[allow(clippy::arithmetic_side_effects)]
+const fn civil_from_days(z: i64) -> (i64, i64, i64) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = z - era * 146_097;
@@ -150,6 +168,8 @@ fn queries(window: Duration) -> [String; 6] {
     ]
 }
 
+/// # Errors
+/// Returns an error if any of the required Prometheus queries fail.
 pub async fn collect(client: &PromClient, window: Duration) -> Result<Snapshot, Error> {
     let [q_pod_cpu, q_pod_mem, q_node_cpu, q_node_mem, q_pod_labels, q_node_labels] = queries(window);
 
@@ -186,6 +206,7 @@ pub struct Inputs {
     pub node_labels: Vec<Sample>,
 }
 
+#[must_use]
 pub fn build_snapshot(input: Inputs, window: Duration) -> Snapshot {
     let Inputs {
         pod_cpu,
@@ -265,7 +286,7 @@ pub fn build_snapshot(input: Inputs, window: Duration) -> Snapshot {
             }
         }
     }
-    for (name, node) in nodes.iter_mut() {
+    for (name, node) in &mut nodes {
         node.labels = node_label_map.remove(name).unwrap_or_default();
     }
 
@@ -301,6 +322,7 @@ fn extract_labels<K: Ord>(
 
 /// kube-state-metrics replaces characters that are invalid in a Prometheus
 /// label name with `_`; do the same to selector keys before matching.
+#[must_use]
 pub fn sanitize_label_key(key: &str) -> String {
     key.chars()
         .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
@@ -327,23 +349,29 @@ pub struct Store {
 }
 
 impl Store {
+    #[must_use]
     pub fn load(&self) -> Option<std::sync::Arc<Snapshot>> {
-        self.snapshot.read().expect("store poisoned").clone()
+        // Recover the value instead of panicking if a prior holder panicked while locked.
+        self.snapshot.read().unwrap_or_else(std::sync::PoisonError::into_inner).clone()
     }
 
     /// Atomically swaps in a freshly built snapshot.
     pub fn replace(&self, snapshot: Snapshot) {
-        self.stats.cached_pods.store(snapshot.pods.len() as u64, Ordering::Relaxed);
-        self.stats.cached_nodes.store(snapshot.nodes.len() as u64, Ordering::Relaxed);
+        let pods = u64::try_from(snapshot.pods.len()).unwrap_or(u64::MAX);
+        let nodes = u64::try_from(snapshot.nodes.len()).unwrap_or(u64::MAX);
+        self.stats.cached_pods.store(pods, Ordering::Relaxed);
+        self.stats.cached_nodes.store(nodes, Ordering::Relaxed);
         self.stats.last_success_unix.store(
-            SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
+            SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs()),
             Ordering::Relaxed,
         );
-        *self.snapshot.write().expect("store poisoned") = Some(std::sync::Arc::new(snapshot));
+        // Recover the value instead of panicking if a prior holder panicked while locked.
+        *self.snapshot.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(std::sync::Arc::new(snapshot));
     }
 }
 
 #[cfg(test)]
+#[allow(clippy::float_cmp)]
 mod tests {
     use super::*;
 
@@ -364,7 +392,7 @@ mod tests {
         assert_eq!(format_memory(2.0 * 1024.0 * 1024.0 * 1024.0), "2Gi");
         assert_eq!(format_memory(1536.0 * 1024.0 * 1024.0), "1536Mi");
         assert_eq!(format_memory(4096.0), "4Ki");
-        assert_eq!(format_memory(1234567.0), "1234567");
+        assert_eq!(format_memory(1_234_567.0), "1234567");
         assert_eq!(format_memory(0.0), "0");
         assert_eq!(format_memory(-5.0), "0");
     }

@@ -68,20 +68,17 @@ async fn run() -> Result<(), Error> {
         max_metrics_age: cfg.max_metrics_age,
     });
 
-    match cfg.tls {
-        Some((cert, key)) => {
-            let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
-                .await
-                .map_err(|e| Error::Config(format!("failed to load TLS material: {e}")))?;
-            axum_server::bind_rustls(cfg.listen_addr, tls)
-                .serve(app.into_make_service())
-                .await?;
-        }
-        None => {
-            warn!("serving plain HTTP; the Kubernetes aggregation layer requires TLS");
-            let listener = TcpListener::bind(cfg.listen_addr).await?;
-            axum::serve(listener, app).await?;
-        }
+    if let Some((cert, key)) = cfg.tls {
+        let tls = axum_server::tls_rustls::RustlsConfig::from_pem_file(&cert, &key)
+            .await
+            .map_err(|e| Error::Config(format!("failed to load TLS material: {e}")))?;
+        axum_server::bind_rustls(cfg.listen_addr, tls)
+            .serve(app.into_make_service())
+            .await?;
+    } else {
+        warn!("serving plain HTTP; the Kubernetes aggregation layer requires TLS");
+        let listener = TcpListener::bind(cfg.listen_addr).await?;
+        axum::serve(listener, app).await?;
     }
     Ok(())
 }
@@ -96,16 +93,14 @@ async fn poll_loop(client: PromClient, store: Arc<Store>, interval: Duration, wi
         match collect(&client, window).await {
             Ok(snapshot) => {
                 let (pods, nodes) = (snapshot.pods.len(), snapshot.nodes.len());
-                store
-                    .stats
-                    .last_duration_micros
-                    .store(started.elapsed().as_micros() as u64, Ordering::Relaxed);
+                let micros = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX);
+                store.stats.last_duration_micros.store(micros, Ordering::Relaxed);
                 store.replace(snapshot);
-                if !ready {
+                if ready {
+                    tracing::debug!(pods, nodes, duration_ms = started.elapsed().as_millis(), "refreshed");
+                } else {
                     ready = true;
                     info!(pods, nodes, "initial metrics snapshot ready");
-                } else {
-                    tracing::debug!(pods, nodes, duration_ms = started.elapsed().as_millis(), "refreshed");
                 }
             }
             Err(e) => {

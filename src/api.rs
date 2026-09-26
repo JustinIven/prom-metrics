@@ -62,6 +62,9 @@ async fn readyz(State(state): State<AppState>) -> Response {
 
 async fn self_metrics(State(state): State<AppState>) -> Response {
     let s = &state.store.stats;
+    // No lossless conversion exists between `u64` microseconds and `f64` seconds.
+    #[allow(clippy::cast_precision_loss, clippy::as_conversions)]
+    let last_duration_secs = s.last_duration_micros.load(Ordering::Relaxed) as f64 / 1e6;
     let body = format!(
         "# HELP metrics_adapter_prometheus_query_duration_seconds Duration of the last Prometheus refresh.\n\
          # TYPE metrics_adapter_prometheus_query_duration_seconds gauge\n\
@@ -78,7 +81,7 @@ async fn self_metrics(State(state): State<AppState>) -> Response {
          # HELP metrics_adapter_cached_nodes Nodes in the current snapshot.\n\
          # TYPE metrics_adapter_cached_nodes gauge\n\
          metrics_adapter_cached_nodes {}\n",
-        s.last_duration_micros.load(Ordering::Relaxed) as f64 / 1e6,
+        last_duration_secs,
         s.query_errors.load(Ordering::Relaxed),
         s.last_success_unix.load(Ordering::Relaxed),
         s.cached_pods.load(Ordering::Relaxed),
@@ -250,32 +253,32 @@ struct Request {
     selector: Vec<Requirement>,
 }
 
-fn prepare(state: &AppState, version: &str, params: &ListParams) -> Result<Request, Response> {
+fn prepare(state: &AppState, version: &str, params: &ListParams) -> Result<Request, Box<Response>> {
     let Some(group_version) = group_version(version) else {
-        return Err(k8s_status(
+        return Err(Box::new(k8s_status(
             StatusCode::NOT_FOUND,
             "NotFound",
             format!("the server could not find the requested resource: metrics.k8s.io/{version}"),
-        ));
+        )));
     };
     let Some(snapshot) = state.store.load() else {
-        return Err(k8s_status(
+        return Err(Box::new(k8s_status(
             StatusCode::SERVICE_UNAVAILABLE,
             "ServiceUnavailable",
             "no metrics have been collected from Prometheus yet",
-        ));
+        )));
     };
     let age = snapshot.age();
     if age > state.max_metrics_age {
-        return Err(k8s_status(
+        return Err(Box::new(k8s_status(
             StatusCode::SERVICE_UNAVAILABLE,
             "ServiceUnavailable",
             format!("cached metrics are stale ({}s old)", age.as_secs()),
-        ));
+        )));
     }
     let selector = match &params.label_selector {
         Some(raw) if snapshot.labels_available => parse_selector(raw)
-            .map_err(|e| k8s_status(StatusCode::BAD_REQUEST, "BadRequest", e))?,
+            .map_err(|e| Box::new(k8s_status(StatusCode::BAD_REQUEST, "BadRequest", e)))?,
         // Without a label source, filtering would silently hide every pod.
         _ => Vec::new(),
     };
@@ -301,7 +304,7 @@ async fn list_pods(
 ) -> Response {
     let req = match prepare(&state, &version, &params) {
         Ok(r) => r,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let items = req
         .snapshot
@@ -326,7 +329,7 @@ async fn list_pods_in_ns(
 ) -> Response {
     let req = match prepare(&state, &version, &params) {
         Ok(r) => r,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     if !valid_name(&namespace) {
         return k8s_status(StatusCode::BAD_REQUEST, "BadRequest", "invalid namespace name");
@@ -352,7 +355,7 @@ async fn get_pod(
 ) -> Response {
     let req = match prepare(&state, &version, &ListParams::default()) {
         Ok(r) => r,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     if !valid_name(&namespace) || !valid_name(&name) {
         return k8s_status(StatusCode::BAD_REQUEST, "BadRequest", "invalid resource name");
@@ -370,7 +373,7 @@ async fn list_nodes(
 ) -> Response {
     let req = match prepare(&state, &version, &params) {
         Ok(r) => r,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     let items = req
         .snapshot
@@ -391,7 +394,7 @@ async fn list_nodes(
 async fn get_node(State(state): State<AppState>, Path((version, name)): Path<(String, String)>) -> Response {
     let req = match prepare(&state, &version, &ListParams::default()) {
         Ok(r) => r,
-        Err(e) => return e,
+        Err(e) => return *e,
     };
     if !valid_name(&name) {
         return k8s_status(StatusCode::BAD_REQUEST, "BadRequest", "invalid resource name");

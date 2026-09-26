@@ -17,7 +17,10 @@ const DEFAULT_CERT: &str = "/var/run/serving-cert/tls.crt";
 const DEFAULT_KEY: &str = "/var/run/serving-cert/tls.key";
 
 impl Config {
-    pub fn from_env() -> Result<Config, Error> {
+    /// # Errors
+    /// Returns an error if a required environment variable is invalid or TLS
+    /// material is only partially present.
+    pub fn from_env() -> Result<Self, Error> {
         let prometheus_url = var("PROMETHEUS_URL", "http://prometheus:9090")
             .trim_end_matches('/')
             .to_string();
@@ -54,7 +57,7 @@ impl Config {
             _ => return Err(Error::Config("TLS_CERT_FILE and TLS_KEY_FILE must both exist".into())),
         };
 
-        Ok(Config {
+        Ok(Self {
             prometheus_url,
             poll_interval,
             max_metrics_age,
@@ -78,8 +81,14 @@ fn duration_var(key: &str, default: &str) -> Result<Duration, Error> {
 }
 
 /// Accepts `500ms`, `15s`, `2m`, `1h` and bare numbers (seconds).
+///
+/// # Errors
+/// Returns an error if the string is not a recognised duration format.
 pub fn parse_duration(s: &str) -> Result<Duration, String> {
     let s = s.trim();
+    // An if/else-if chain over fixed suffixes reads more clearly here than a
+    // nested `map_or_else`.
+    #[allow(clippy::option_if_let_else)]
     let (num, unit_ns) = if let Some(v) = s.strip_suffix("ms") {
         (v, 1_000_000u64)
     } else if let Some(v) = s.strip_suffix('s') {
@@ -98,7 +107,15 @@ pub fn parse_duration(s: &str) -> Result<Duration, String> {
     if !value.is_finite() || value < 0.0 {
         return Err(format!("invalid duration {s:?}"));
     }
-    Ok(Duration::from_nanos((value * unit_ns as f64) as u64))
+    // No lossless conversion exists between `f64` and `u64`; `value` is
+    // checked finite and non-negative immediately above.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss, clippy::as_conversions)]
+    let nanos = {
+        #[allow(clippy::cast_precision_loss)]
+        let unit_ns = unit_ns as f64;
+        (value * unit_ns) as u64
+    };
+    Ok(Duration::from_nanos(nanos))
 }
 
 #[cfg(test)]

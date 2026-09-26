@@ -14,54 +14,56 @@ use prom_metrics::{
 
 const MI: f64 = 1024.0 * 1024.0;
 
-fn vector(samples: Vec<Value>) -> Value {
+fn vector(samples: &[Value]) -> Value {
     json!({"status": "success", "data": {"resultType": "vector", "result": samples}})
 }
 
-fn sample(labels: Value, value: f64) -> Value {
+fn sample(labels: &Value, value: f64) -> Value {
     json!({"metric": labels, "value": [1_700_000_000.0, value.to_string()]})
 }
 
 async fn prometheus_query(Form(form): Form<HashMap<String, String>>) -> Json<Value> {
     let q = form.get("query").cloned().unwrap_or_default();
     let result = if q.contains("kube_pod_labels") {
-        vector(vec![
-            sample(json!({"namespace": "default", "pod": "web", "label_app": "web"}), 1.0),
-            sample(json!({"namespace": "default", "pod": "api", "label_app": "api"}), 1.0),
+        vector(&[
+            sample(&json!({"namespace": "default", "pod": "web", "label_app": "web"}), 1.0),
+            sample(&json!({"namespace": "default", "pod": "api", "label_app": "api"}), 1.0),
         ])
     } else if q.contains("kube_node_labels") {
-        vector(vec![sample(
-            json!({"node": "node-a", "label_kubernetes_io_os": "linux"}),
+        vector(&[sample(
+            &json!({"node": "node-a", "label_kubernetes_io_os": "linux"}),
             1.0,
         )])
     } else if q.contains("id=\"/\"") && q.contains("rate(") {
-        vector(vec![
-            sample(json!({"node": "node-a"}), 1.5),
-            sample(json!({"node": "node-b"}), 0.25),
+        vector(&[
+            sample(&json!({"node": "node-a"}), 1.5),
+            sample(&json!({"node": "node-b"}), 0.25),
         ])
     } else if q.contains("id=\"/\"") {
-        vector(vec![
-            sample(json!({"node": "node-a"}), 2.0 * 1024.0 * MI),
-            sample(json!({"node": "node-b"}), 512.0 * MI),
+        vector(&[
+            sample(&json!({"node": "node-a"}), 2.0 * 1024.0 * MI),
+            sample(&json!({"node": "node-b"}), 512.0 * MI),
         ])
     } else if q.contains("rate(") {
-        vector(vec![
-            sample(json!({"namespace": "default", "pod": "web", "container": "app"}), 0.25),
-            sample(json!({"namespace": "default", "pod": "web", "container": "POD"}), 9.0),
-            sample(json!({"namespace": "default", "pod": "api", "container": "app"}), 0.0),
-            sample(json!({"namespace": "kube-system", "pod": "dns", "container": "coredns"}), 0.01),
+        vector(&[
+            sample(&json!({"namespace": "default", "pod": "web", "container": "app"}), 0.25),
+            sample(&json!({"namespace": "default", "pod": "web", "container": "POD"}), 9.0),
+            sample(&json!({"namespace": "default", "pod": "api", "container": "app"}), 0.0),
+            sample(&json!({"namespace": "kube-system", "pod": "dns", "container": "coredns"}), 0.01),
         ])
     } else {
-        vector(vec![
-            sample(json!({"namespace": "default", "pod": "web", "container": "app"}), 64.0 * MI),
-            sample(json!({"namespace": "default", "pod": "web", "container": "sidecar"}), 8.0 * MI),
-            sample(json!({"namespace": "default", "pod": "api", "container": "app"}), 0.0),
-            sample(json!({"namespace": "kube-system", "pod": "dns", "container": "coredns"}), 16.0 * MI),
+        vector(&[
+            sample(&json!({"namespace": "default", "pod": "web", "container": "app"}), 64.0 * MI),
+            sample(&json!({"namespace": "default", "pod": "web", "container": "sidecar"}), 8.0 * MI),
+            sample(&json!({"namespace": "default", "pod": "api", "container": "app"}), 0.0),
+            sample(&json!({"namespace": "kube-system", "pod": "dns", "container": "coredns"}), 16.0 * MI),
         ])
     };
     Json(result)
 }
 
+/// Test-only helper: panics on failure are acceptable inside test infrastructure.
+#[allow(clippy::unwrap_used)]
 async fn serve(app: Router) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -71,6 +73,7 @@ async fn serve(app: Router) -> String {
 
 /// Boots a mock Prometheus, performs one real collection through the
 /// Prometheus client, and serves the resulting snapshot over the adapter API.
+#[allow(clippy::unwrap_used)]
 async fn adapter(max_metrics_age: Duration) -> String {
     let prom = serve(Router::new().route("/api/v1/query", post(prometheus_query))).await;
     let client = PromClient::new(&prom, Duration::from_secs(5)).unwrap();
@@ -81,6 +84,7 @@ async fn adapter(max_metrics_age: Duration) -> String {
     serve(router(AppState { store, max_metrics_age })).await
 }
 
+#[allow(clippy::unwrap_used)]
 async fn get(base: &str, path: &str) -> (u16, Value) {
     let resp = reqwest::get(format!("{base}{path}")).await.unwrap();
     let status = resp.status().as_u16();
@@ -275,7 +279,7 @@ async fn health_endpoints_reflect_snapshot_availability() {
     assert_eq!(body["reason"], "ServiceUnavailable");
 
     store.replace(prom_metrics::metrics::build_snapshot(
-        Default::default(),
+        prom_metrics::metrics::Inputs::default(),
         Duration::from_secs(60),
     ));
     assert_eq!(client.get(format!("{base}/readyz")).send().await.unwrap().status(), 200);
