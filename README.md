@@ -55,6 +55,16 @@ Helm-generated CA with a verified APIService, and supports cert-manager or an
 existing Secret. See [charts/prom-metrics/README.md](charts/prom-metrics/README.md)
 for all values. Plain manifests are in [deploy/](deploy/).
 
+## Performance
+
+Benchmarked against metrics-server and prometheus-adapter on a 3-node Talos
+cluster (Kubernetes v1.37.0, Prometheus v3.15.0, 15s scrape/poll, one replica
+each, fresh installs). Methodology and raw data:
+[metrics-api-comparison](https://github.com/JustinIven/metrics-api-comparison).
+
+![CPU and memory of metrics-server, prometheus-adapter and prom-metrics at 5, 20 and 50 pods](https://raw.githubusercontent.com/JustinIven/metrics-api-comparison/9079a75cbf4319e1df0b7a6c68123fd8a553e5ba/results/charts/resource_usage_combined.png)
+
+
 ## Configuration
 
 Environment variables (the chart maps them to values):
@@ -110,11 +120,10 @@ restart loops.
 
 ## Sizing
 
-Measured on kind v1.37.0: 1.4 MiB RSS, 1m CPU, 4.1 ms per full refresh,
-~1 ms per `/pods` request, 3.27 MB image. Default requests `10m`/`32Mi`, limit
-`64Mi` memory; raise the memory limit above a few thousand pods. Avoid CPU
-limits — throttling only adds latency. Prometheus load is fixed per poll, but
-query cost grows with cardinality; watch the refresh duration.
+The image is 3.27 MB; a full refresh takes ~4 ms. Default requests
+`10m`/`32Mi`, limit `64Mi` memory; raise the memory limit above a few thousand
+pods. Avoid CPU limits — throttling only adds latency. Prometheus load is fixed
+per poll, but query cost grows with cardinality; watch the refresh duration.
 
 ## Observability
 
